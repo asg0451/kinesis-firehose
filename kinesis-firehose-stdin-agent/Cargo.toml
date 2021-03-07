@@ -1,0 +1,15 @@
+[package]
+name = "kinesis-firehose-stdin-agent"
+version = "0.1.0"
+authors = ["Miles Frankel <miles.frankel@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.38"
+env_logger = "0.8.3"
+fehler = "1.0.0"
+kinesis-firehose-producer = { path = "../kinesis-firehose-producer" }
+log = "0.4.14"
+structopt = "0.3.21"

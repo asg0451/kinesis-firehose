@@ -1,0 +1,16 @@
+[package]
+name = "kinesis-firehose-producer"
+version = "0.1.0"
+authors = ["Miles Frankel <miles.frankel@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bytes = "1.0.1"
+fehler = "1.0.0"
+log = "0.4.14"
+rusoto_core = "0.46.0"
+rusoto_firehose = "0.46.0"
+thiserror = "1.0.24"
+tokio = "1.2.0"

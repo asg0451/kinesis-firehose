@@ -1,0 +1,5 @@
+[workspace]
+members = [
+        "kinesis-firehose-producer",
+        "kinesis-firehose-stdin-agent"
+]
