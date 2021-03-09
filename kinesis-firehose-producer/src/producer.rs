@@ -1,53 +1,39 @@
 use fehler::{throw, throws};
 use rusoto_core::{Region, RusotoError};
-use rusoto_firehose::{
-    KinesisFirehose, KinesisFirehoseClient, PutRecordBatchError, PutRecordBatchInput,
-};
+use rusoto_firehose::{KinesisFirehoseClient, PutRecordBatchError, PutRecordBatchInput};
 use tokio::runtime;
 
 use crate::buffer::Buffer;
 use crate::error::Error;
+use crate::put_record_batcher::PutRecordBatcher;
 
 // a synchronous buffering producer. TODO: async version?
-// TODO: generic over client so we can sub in a test mock
 // TODO: tests
-pub struct Producer {
+
+pub struct Producer<C: PutRecordBatcher> {
     buf: Buffer,
-    client: KinesisFirehoseClient,
+    client: C,
     stream_name: String,
     runtime: runtime::Runtime,
 }
 
-impl Producer {
+impl Producer<KinesisFirehoseClient> {
     #[throws]
     pub fn new(stream_name: String) -> Self {
-        Self {
-            buf: Buffer::new(),
-            client: KinesisFirehoseClient::new(Region::default()),
-            stream_name,
-            runtime: runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()?,
-        }
+        Self::with_client(KinesisFirehoseClient::new(Region::default()), stream_name)?
     }
+}
 
+impl<C: PutRecordBatcher> Producer<C> {
     #[throws]
-    pub fn with_aws_region_client(region: Region, stream_name: String) -> Self {
-        Self {
-            buf: Buffer::new(),
-            client: KinesisFirehoseClient::new(region),
-            stream_name,
-            runtime: runtime::Builder::new_current_thread().build()?,
-        }
-    }
-
-    #[throws]
-    pub fn with_client(client: KinesisFirehoseClient, stream_name: String) -> Self {
+    pub fn with_client(client: C, stream_name: String) -> Self {
         Self {
             buf: Buffer::new(),
             client,
             stream_name,
-            runtime: runtime::Builder::new_current_thread().build()?,
+            runtime: runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?,
         }
     }
 
@@ -85,7 +71,7 @@ impl Producer {
                 records: records_to_try.clone(),
             };
 
-            let res = self.runtime.block_on(self.client.put_record_batch(req));
+            let res = self.runtime.block_on(self.client._put_record_batch(req));
 
             if let Err(RusotoError::Service(PutRecordBatchError::ServiceUnavailable(err))) = res {
                 // back off and retry the whole request
@@ -118,7 +104,8 @@ impl Producer {
         throw!(Error::TooManyAttempts)
     }
 }
-impl Drop for Producer {
+
+impl<C: PutRecordBatcher> Drop for Producer<C> {
     fn drop(&mut self) {
         let res = self.flush();
         if let Err(err) = res {
@@ -129,8 +116,24 @@ impl Drop for Producer {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::put_record_batcher::MockPutRecordBatcher;
+
     #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
+    fn it_works_or_something() {
+        let mocker = MockPutRecordBatcher::new();
+        let buf_ref = mocker.buf_ref();
+
+        let mut producer = Producer::with_client(mocker, "mf-test-2".to_string()).unwrap();
+        producer.produce("hi".to_string()).unwrap();
+
+        producer.flush().expect("flush pls");
+        let len = {
+            let buf = buf_ref.lock().unwrap();
+            let buf = buf.borrow();
+            buf.len()
+        };
+
+        assert_eq!(len, 1);
     }
 }

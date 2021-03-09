@@ -2,7 +2,7 @@ mod buffer;
 mod error;
 mod producer;
 
-// mod put_record_batcher;
+mod put_record_batcher;
 
 pub use producer::Producer;
 

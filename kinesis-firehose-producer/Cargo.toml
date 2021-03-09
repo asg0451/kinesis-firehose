@@ -7,6 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+async-trait = "0.1.46"
 bytes = "1.0.1"
 fehler = "1.0.0"
 log = "0.4.14"
