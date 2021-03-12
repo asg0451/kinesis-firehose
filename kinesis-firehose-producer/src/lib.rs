@@ -1,10 +1,9 @@
 mod buffer;
 mod error;
-mod producer;
-
 mod put_record_batcher;
 
-pub use producer::Producer;
+pub mod async_producer;
+pub mod sync_producer;
 
 #[cfg(test)]
 mod tests {

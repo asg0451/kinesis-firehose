@@ -15,7 +15,7 @@ use std::{
 };
 
 #[async_trait]
-pub trait PutRecordBatcher {
+pub trait PutRecordBatcher: Send + Sync {
     async fn _put_record_batch(
         &self,
         req: PutRecordBatchInput,

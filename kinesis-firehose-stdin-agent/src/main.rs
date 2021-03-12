@@ -5,7 +5,7 @@ use env_logger::Env;
 use fehler::throws;
 use structopt::StructOpt;
 
-use kinesis_firehose_producer::Producer;
+use kinesis_firehose_producer::sync_producer::KinesisFirehoseProducer;
 
 #[derive(Debug, StructOpt)]
 #[structopt(
@@ -22,7 +22,7 @@ fn main() {
     let level_str = "info,kinesis_firehose_produce=trace";
     env_logger::Builder::from_env(Env::default().default_filter_or(level_str)).init();
     let opt = Opt::from_args();
-    let mut producer = Producer::new(opt.firehose_name)?;
+    let mut producer = KinesisFirehoseProducer::new(opt.firehose_name)?;
     for line in std::io::stdin().lock().lines() {
         let line = line?;
         producer.produce(line)?;
