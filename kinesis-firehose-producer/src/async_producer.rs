@@ -63,7 +63,7 @@ impl<C: PutRecordBatcher> InnerProducer<C> {
                 // back off and retry the whole request
                 // TODO: is this a param? more intricate logic based on attempt num?
                 log::debug!("service unavailable: {}. sleeping & retrying", err);
-                std::thread::sleep(std::time::Duration::from_millis(100));
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                 continue;
             }
 
@@ -224,5 +224,31 @@ mod tests {
         let res = producer.flush().await.expect_err("expect err");
 
         assert_err!(res, Error::TooManyAttempts);
+    }
+
+    // #[test_env_log::test(tokio::test)]
+    #[tokio::test]
+    async fn it_retries_only_failed_records() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let mocker = MockPutRecordBatcher::with_fail_times(1);
+        let buf_ref = mocker.buf_ref();
+
+        let mut producer = Producer::with_client(mocker, "mf-test-2".to_string()).unwrap();
+        producer.produce("message 1".to_string()).await.unwrap();
+        producer.produce("message 2".to_string()).await.unwrap();
+
+        producer.flush().await.expect("failed to flush");
+
+        let buf = buf_ref.lock().unwrap();
+        let buf = buf.borrow();
+        assert_eq!(buf.len(), 2);
+        assert_eq!(
+            buf.iter()
+                .map(|r| std::str::from_utf8(&r.data).unwrap())
+                .collect::<Vec<_>>(),
+            // reverse order because of the error -- the first one failed, but the second went
+            // through, and then we resent the first
+            vec!["message 2\n".to_string(), "message 1\n".to_string()]
+        );
     }
 }

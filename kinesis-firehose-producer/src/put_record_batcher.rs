@@ -26,7 +26,7 @@ pub trait PutRecordBatcher: Send + Sync {
 #[derive(Debug)]
 pub(crate) struct MockPutRecordBatcher {
     pub(crate) buf: Arc<Mutex<RefCell<Vec<Record>>>>,
-    pub(crate) fail_times: Arc<Mutex<RefCell<usize>>>,
+    pub(crate) fail_times: Arc<Mutex<RefCell<i64>>>,
 }
 
 #[cfg(test)]
@@ -38,7 +38,7 @@ impl MockPutRecordBatcher {
         }
     }
 
-    pub(crate) fn with_fail_times(ft: usize) -> Self {
+    pub(crate) fn with_fail_times(ft: i64) -> Self {
         Self {
             buf: Arc::new(Mutex::new(RefCell::new(vec![]))),
             fail_times: Arc::new(Mutex::new(RefCell::new(ft))),
@@ -63,26 +63,26 @@ impl PutRecordBatcher for MockPutRecordBatcher {
         let mut buf = buf.borrow_mut();
 
         let fail_times = self.fail_times.lock().expect("poisoned mutex");
-        let mut fail_times = fail_times.borrow().clone();
-
-        buf.append(&mut records.clone());
+        let mut fail_times = fail_times.borrow_mut();
 
         // a nice successful response
         let rrs = records
             .iter()
-            .map(|_r| {
+            .map(|r| {
+                log::trace!("fail_times: {}", fail_times);
                 // TODO: realistic values
-                if fail_times < 1 {
-                    PutRecordBatchResponseEntry {
-                        error_code: None,
-                        error_message: None,
-                        record_id: Some("wa".to_string()),
-                    }
-                } else {
-                    fail_times -= 1;
+                if *fail_times > 0 {
+                    *fail_times -= 1;
                     PutRecordBatchResponseEntry {
                         error_code: Some("some error code".to_string()),
                         error_message: Some("some error message".to_string()),
+                        record_id: Some("wa".to_string()),
+                    }
+                } else {
+                    buf.push(r.clone());
+                    PutRecordBatchResponseEntry {
+                        error_code: None,
+                        error_message: None,
                         record_id: Some("wa".to_string()),
                     }
                 }
