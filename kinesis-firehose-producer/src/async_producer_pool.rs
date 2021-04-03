@@ -4,7 +4,6 @@ use fehler::throws;
 use futures::stream::{self, StreamExt, TryStreamExt};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::{channel, Sender};
-use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 #[derive(Debug)]
