@@ -1,7 +1,10 @@
 use rusoto_core::RusotoError;
 use rusoto_firehose::PutRecordBatchError;
+use tokio::sync::mpsc::error::SendError;
 
 use thiserror::Error;
+
+use crate::async_producer_pool::Message;
 
 // is there a way to get backtraces here?
 #[derive(Error, Debug)]
@@ -17,6 +20,17 @@ pub enum Error {
     #[error("ran out of attempts trying to deliver")]
     TooManyAttempts,
 
+    #[error("pool channel send error: {source}")]
+    PoolChannelSend {
+        #[from]
+        source: SendError<Message>,
+    },
+
+    #[error("join error: {source}")]
+    Join {
+        #[from]
+        source: tokio::task::JoinError,
+    },
     #[allow(clippy::upper_case_acronyms)]
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),

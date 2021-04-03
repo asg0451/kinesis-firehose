@@ -1,5 +1,6 @@
 [workspace]
 members = [
         "kinesis-firehose-producer",
-        "kinesis-firehose-stdin-agent"
+        "kinesis-firehose-stdin-agent",
+        "kinesis-firehose-pool-stdin-agent"
 ]
