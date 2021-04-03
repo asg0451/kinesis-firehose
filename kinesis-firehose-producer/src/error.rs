@@ -17,8 +17,8 @@ pub enum Error {
     #[error("ran out of attempts trying to deliver")]
     TooManyAttempts,
 
+    #[allow(clippy::upper_case_acronyms)]
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
 }
-
 // type Result<T> = std::result::Result<T, Error>;

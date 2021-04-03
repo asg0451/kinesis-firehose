@@ -76,7 +76,7 @@ impl<C: PutRecordBatcher> InnerProducer<C> {
                     .enumerate()
                     .filter_map(|(i, rr)| {
                         // TODO: how can this be better
-                        rr.error_code.and_then(|_| Some(records_to_try[i].clone()))
+                        rr.error_code.map(|_| records_to_try[i].clone())
                     })
                     .collect::<Vec<_>>();
                 continue;
@@ -186,6 +186,15 @@ mod tests {
     use super::*;
     use crate::put_record_batcher::MockPutRecordBatcher;
 
+    macro_rules! assert_err {
+        ($expression:expr, $($pattern:tt)+) => {
+            match $expression {
+                $($pattern)+ => (),
+                ref e => panic!("expected `{}` but got `{:?}`", stringify!($($pattern)+), e),
+            }
+        }
+    }
+
     #[tokio::test] // #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn it_works_or_something() {
         let mocker = MockPutRecordBatcher::new();
@@ -202,5 +211,18 @@ mod tests {
         };
 
         assert_eq!(len, 1);
+    }
+
+    // #[test_env_log::test(tokio::test)]
+    #[tokio::test]
+    async fn it_retries_and_fails() {
+        let mocker = MockPutRecordBatcher::with_fail_times(100);
+
+        let mut producer = Producer::with_client(mocker, "mf-test-2".to_string()).unwrap();
+        producer.produce("message 1".to_string()).await.unwrap();
+
+        let res = producer.flush().await.expect_err("expect err");
+
+        assert_err!(res, Error::TooManyAttempts);
     }
 }

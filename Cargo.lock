@@ -502,10 +502,12 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "env_logger",
  "fehler",
  "log",
  "rusoto_core",
  "rusoto_firehose",
+ "test-env-log",
  "thiserror",
  "tokio",
 ]
@@ -1222,6 +1224,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dfed899f0eb03f32ee8c6a0aabdb8a7949659e3466561fc0adf54e26d88c5f4"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "test-env-log"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e61b8176952b2985e5916cccb929e14731fdad26d2923efe888003702467e6ad"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

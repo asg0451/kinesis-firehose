@@ -15,3 +15,7 @@ rusoto_core = "0.46.0"
 rusoto_firehose = "0.46.0"
 thiserror = "1.0.24"
 tokio = "1.2.0"
+
+[dev-dependencies]
+test-env-log = "0.2.6"
+env_logger = '*'
