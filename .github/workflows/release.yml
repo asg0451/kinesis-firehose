@@ -1,3 +1,4 @@
+# TODO: this should run cargo publish maybe...
 name: release
 on:
   push:
