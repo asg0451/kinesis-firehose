@@ -21,9 +21,9 @@ jobs:
           toolchain: stable
 
       - name: Build Release
-        run: cargo build --release
+        run: cargo build --examples --release
       - name: Strip Release
-        run: strip target/release/kinesis-firehose-stdin-agent
+        run: strip target/release/examples/sync-stdin-agent target/release/examples/async-pool-stdin-agent
 
       - name: Build Changelog
         id: github_release
@@ -41,14 +41,24 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload Release Asset
-        id: upload-release-asset
+      - name: Upload Release Asset 1
+        id: upload-release-asset-1
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./target/release/kinesis-firehose-stdin-agent
-          asset_name: kinesis-firehose-stdin-agent
+          asset_path: ./target/release/examples/sync-stdin-agent
+          asset_name: sync-stdin-agent
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Asset 2
+        id: upload-release-asset-2
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./target/release/examples/async-pool-stdin-agent
+          asset_name: async-pool-stdin-agent
           asset_content_type: application/octet-stream

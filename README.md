@@ -1,4 +1,6 @@
-## Kinesis Firehose
+## Kinesis Firehose (Producer)
 ![build status](https://github.com/asg0451/kinesis-firehose/actions/workflows/build.yml/badge.svg)
 
-wip
+A Rust crate to send data to AWS Kinesis Firehose
+Very much WIP
+
