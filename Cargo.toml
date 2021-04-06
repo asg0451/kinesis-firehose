@@ -1,8 +1,14 @@
 [package]
 name = "kinesis-firehose-producer"
 version = "0.1.0"
-authors = ["Miles Frankel <miles.frankel@gmail.com>"]
 edition = "2018"
+authors = ["Miles Frankel <miles.frankel@gmail.com>"]
+license = "MIT"
+description = "AWS Kinesis Firehose Producer"
+repository = "https://github.com/asg0451/kinesis-firehose"
+keywords = ["AWS", "Kinesis", "Firehose"]
+categories = ["network-programming"]
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
