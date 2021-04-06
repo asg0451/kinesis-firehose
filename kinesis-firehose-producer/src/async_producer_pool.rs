@@ -1,10 +1,16 @@
-use crate::async_producer::KinesisFirehoseProducer;
+use crate::async_producer::Producer;
 use crate::error::Error;
+use crate::put_record_batcher::PutRecordBatcher;
 use fehler::throws;
 use futures::stream::{self, StreamExt, TryStreamExt};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::task::JoinHandle;
+
+#[cfg(test)]
+use crate::put_record_batcher::{BufRef, MockPutRecordBatcher};
+#[cfg(test)]
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug)]
 pub enum Message {
@@ -33,9 +39,21 @@ pub struct AsyncPool {
 impl AsyncPool {
     #[throws]
     pub async fn of_size(stream_name: String, size: usize) -> Self {
+        Self::of_size_with_make_producer(stream_name, size, Producer::new).await?
+    }
+
+    #[throws]
+    async fn of_size_with_make_producer<
+        C: PutRecordBatcher + 'static,
+        F: Fn(String) -> Result<Producer<C>, Error>,
+    >(
+        stream_name: String,
+        size: usize,
+        make_producer: F,
+    ) -> Self {
         let (err_tx, mut err_rx) = channel::<Error>(1);
         let things = stream::iter(0..size)
-            .then(|n| Self::create_thing(stream_name.clone(), err_tx.clone(), n))
+            .then(|n| Self::create_member(stream_name.clone(), err_tx.clone(), n, &make_producer))
             .try_collect()
             .await?;
         // monitor err chan for errors. if there is one, panic
@@ -93,9 +111,17 @@ impl AsyncPool {
     }
 
     #[throws]
-    async fn create_thing(stream_name: String, err_tx: Sender<Error>, num: usize) -> Member {
+    async fn create_member<
+        C: PutRecordBatcher + 'static,
+        F: Fn(String) -> Result<Producer<C>, Error>,
+    >(
+        stream_name: String,
+        err_tx: Sender<Error>,
+        num: usize,
+        make_producer: F,
+    ) -> Member {
         let (tx, mut rx) = channel(100);
-        let mut p = KinesisFirehoseProducer::new(stream_name)?;
+        let mut p: Producer<C> = make_producer(stream_name)?;
         let handle = tokio::spawn(async move {
             log::trace!("creating producer {}", num);
             while let Some(msg) = rx.recv().await {
@@ -122,6 +148,28 @@ impl AsyncPool {
 
         Member { tx, handle }
     }
+
+    #[cfg(test)]
+    #[throws]
+    async fn of_size_mocked(
+        stream_name: String,
+        size: usize,
+        fail_times: i64,
+    ) -> (Self, Arc<Mutex<Vec<BufRef>>>) {
+        use std::sync::{Arc, Mutex};
+        let bufs = Arc::new(Mutex::new(Vec::with_capacity(size)));
+        let b2 = bufs.clone();
+        let pool = Self::of_size_with_make_producer(stream_name, size, move |sn| {
+            let bufs = b2.clone();
+            let mut bufs = bufs.lock().unwrap();
+            let mocker = MockPutRecordBatcher::with_fail_times(fail_times);
+            let buf_ref = mocker.buf_ref();
+            bufs.push(buf_ref);
+            Producer::with_client(mocker, sn)
+        })
+        .await?;
+        (pool, bufs)
+    }
 }
 
 impl Drop for AsyncPool {
@@ -129,5 +177,55 @@ impl Drop for AsyncPool {
         if !self.shutdown.load(Ordering::SeqCst) {
             log::error!("async pool being dropped without being shut down! data will be lost");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bufs_contents(buf_refs: Arc<Mutex<Vec<BufRef>>>) -> Vec<String> {
+        let buf_refs = buf_refs.lock().unwrap();
+        buf_refs
+            .iter()
+            .map(|b| {
+                let buf = b.lock().unwrap();
+                let buf = buf.borrow();
+                let strs = buf
+                    .clone()
+                    .iter()
+                    .map(|r| std::str::from_utf8(&r.data).unwrap().to_string())
+                    .collect::<Vec<_>>();
+                strs
+            })
+            .flatten()
+            .collect::<Vec<_>>()
+    }
+
+    #[tokio::test]
+    async fn it_works() {
+        let (mut pool, buf_refs) = AsyncPool::of_size_mocked("mf-test-2".to_string(), 2, 0)
+            .await
+            .unwrap();
+
+        pool.produce("hello".to_string()).await.unwrap();
+        pool.produce("world".to_string()).await.unwrap();
+        pool.shutdown().await.unwrap();
+
+        let data = bufs_contents(buf_refs);
+        assert_eq!(&data, &vec!["hello\n".to_string(), "world\n".to_string()])
+    }
+
+    #[should_panic]
+    #[tokio::test]
+    async fn it_panics_if_it_cant_flush() {
+        let (mut pool, _buf_refs) = AsyncPool::of_size_mocked("mf-test-2".to_string(), 2, 11)
+            .await
+            .unwrap();
+
+        pool.produce("hello".to_string()).await.unwrap();
+        pool.produce("world".to_string()).await.unwrap();
+
+        pool.shutdown().await.unwrap();
     }
 }

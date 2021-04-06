@@ -51,6 +51,9 @@ impl MockPutRecordBatcher {
 }
 
 #[cfg(test)]
+pub(crate) type BufRef = Arc<Mutex<RefCell<Vec<Record>>>>;
+
+#[cfg(test)]
 #[async_trait]
 impl PutRecordBatcher for MockPutRecordBatcher {
     async fn _put_record_batch(
