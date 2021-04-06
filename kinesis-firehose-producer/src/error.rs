@@ -1,12 +1,11 @@
+use crate::async_producer_pool::Message;
 use rusoto_core::RusotoError;
 use rusoto_firehose::PutRecordBatchError;
+use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 
-use thiserror::Error;
-
-use crate::async_producer_pool::Message;
-
 // is there a way to get backtraces here?
+#[non_exhaustive]
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("rusoto delivery error: {source}")]

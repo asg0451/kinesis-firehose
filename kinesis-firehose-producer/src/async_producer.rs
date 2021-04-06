@@ -1,3 +1,7 @@
+//! Async Producer
+//!
+//! You probably want to use [`KinesisFirehoseProducer`], which is a type alias of [`Producer<KinesisFirehoseClient>`]
+
 use fehler::{throw, throws};
 use rusoto_core::{Region, RusotoError};
 use rusoto_firehose::{KinesisFirehoseClient, PutRecordBatchError, PutRecordBatchInput};
@@ -6,16 +10,34 @@ use crate::buffer::Buffer;
 use crate::error::Error;
 use crate::put_record_batcher::PutRecordBatcher;
 
+/// The producer itself.
+/// Create one with [`Producer<KinesisFirehoseClient>::new`] or [`Producer::with_client`]
 pub struct Producer<C: PutRecordBatcher> {
     buf: Buffer,
     client: C,
     stream_name: String,
 }
 
+/// The type alias you'll probably want to use
 pub type KinesisFirehoseProducer = Producer<KinesisFirehoseClient>;
 
+impl Producer<KinesisFirehoseClient> {
+    /// Create a Producer with a new [`KinesisFirehoseClient`] gleaned from the environment
+    #[throws]
+    pub fn new(stream_name: String) -> Self {
+        Self {
+            buf: Buffer::new(),
+            client: KinesisFirehoseClient::new(Region::default()),
+            stream_name,
+        }
+    }
+}
+
 impl<C: PutRecordBatcher> Producer<C> {
-    // this WILL add newlines. don't add them yourself
+    /// Buffer a record to be sent to Kinesis Firehose. If this record fills up the buffer, it will
+    /// be flushed.
+    ///
+    /// This function WILL add newlines to the end of each record. Don't add them yourself.
     #[throws]
     pub async fn produce(&mut self, mut rec: String) {
         rec += "\n";
@@ -27,6 +49,13 @@ impl<C: PutRecordBatcher> Producer<C> {
         self.buf.add_rec(rec);
     }
 
+    /// Make the producer flush its buffer.
+    ///
+    /// You MUST flush before dropping / when you're done
+    /// otherwise buffered data will be lost. Blame the lack of async Drop.
+    ///
+    /// You may also want to do this on a timer if your data comes in slowly.
+    // TODO: make us do that or something somehow
     // due to a bug in fehler (fixed on master but not in release) this warns unreachable_code
     #[allow(unreachable_code)]
     #[throws]
@@ -36,7 +65,7 @@ impl<C: PutRecordBatcher> Producer<C> {
         }
         let recs = self.buf.as_owned_vec();
         let mut records_to_try = recs;
-        let mut attempts_left: i32 = 10;
+        let mut attempts_left: i32 = 10; // TODO: this should be a parameter. config? buf size too
 
         while attempts_left > 0 {
             log::trace!("flushing; attempts_left: {}", attempts_left);
@@ -82,28 +111,12 @@ impl<C: PutRecordBatcher> Producer<C> {
         throw!(Error::TooManyAttempts);
     }
 
-    #[throws]
-    pub async fn close(&mut self) {
-        // TODO: set self.closed, error to produce on it
-        self.flush().await?
-    }
-
+    /// Create a Producer with an existing [`KinesisFirehoseClient`]
     #[throws]
     pub fn with_client(client: C, stream_name: String) -> Self {
         Self {
             buf: Buffer::new(),
             client,
-            stream_name,
-        }
-    }
-}
-
-impl Producer<KinesisFirehoseClient> {
-    #[throws]
-    pub fn new(stream_name: String) -> Self {
-        Self {
-            buf: Buffer::new(),
-            client: KinesisFirehoseClient::new(Region::default()),
             stream_name,
         }
     }

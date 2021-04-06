@@ -1,3 +1,8 @@
+//! A Pool of Async Producers
+//!
+//! This has a much higher throughput than a lone Producer, but at the cost of
+//! non-local / trickier errors.
+
 use crate::async_producer::Producer;
 use crate::error::Error;
 use crate::put_record_batcher::PutRecordBatcher;
@@ -12,6 +17,8 @@ use crate::put_record_batcher::{BufRef, MockPutRecordBatcher};
 #[cfg(test)]
 use std::sync::{Arc, Mutex};
 
+/// The internal type of messages sent around the pool
+#[non_exhaustive]
 #[derive(Debug)]
 pub enum Message {
     Produce(String),
@@ -25,23 +32,51 @@ struct Member {
     handle: JoinHandle<()>,
 }
 
+/// The Producer Pool.
+/// Create one with [`AsyncProducerPool::of_size`]
+///
+/// # Panics
+///
+/// This can panic at pretty much any point if a member Producer throws an error.
+/// Currently there is an error channel which waits for errors and panics, but
+/// we could do something else here? If we get in that state, though, it's likely
+/// the situation won't benefit from additional retries. So what else would we do?
 #[derive(Debug)]
-pub struct AsyncPool {
+pub struct AsyncProducerPool {
     things: Vec<Member>,
     send_to_next: usize,
     err_watcher: JoinHandle<()>,
     shutdown: AtomicBool,
 }
 
-// TODO: tests
-// TODO: doc about needing to call shutdown
-
-impl AsyncPool {
+impl AsyncProducerPool {
+    /// Create a pool of size `size`
     #[throws]
     pub async fn of_size(stream_name: String, size: usize) -> Self {
+        assert!(size > 0);
         Self::of_size_with_make_producer(stream_name, size, Producer::new).await?
     }
 
+    /// Create a pool of size `size` with a given client
+    /// The client will be cloned for each pool member
+    ///
+    /// # Panics
+    ///
+    /// If size < 1
+    #[throws]
+    pub async fn of_size_with_client(
+        stream_name: String,
+        size: usize,
+        client: rusoto_firehose::KinesisFirehoseClient,
+    ) -> Self {
+        assert!(size > 0);
+        Self::of_size_with_make_producer(stream_name, size, |sn| {
+            Producer::with_client(client.clone(), sn)
+        })
+        .await?
+    }
+
+    // this type nonsense is just so we can substitute a mock producer in tests
     #[throws]
     async fn of_size_with_make_producer<
         C: PutRecordBatcher + 'static,
@@ -74,6 +109,7 @@ impl AsyncPool {
         }
     }
 
+    /// Produce a message; send a string to a producer. Panics if the pool has been shutdown
     #[throws]
     pub async fn produce(&mut self, rec: String) {
         if self.shutdown.load(Ordering::SeqCst) {
@@ -84,6 +120,8 @@ impl AsyncPool {
         self.send_to_next = (self.send_to_next + 1) % self.things.len();
     }
 
+    /// Queue a flush for each of the members. Doesn't wait for them to finish
+    // TODO: could do this with oneshots but who cares
     #[throws]
     pub async fn flush(&mut self) {
         for Member { tx, .. } in self.things.iter() {
@@ -94,6 +132,10 @@ impl AsyncPool {
         }
     }
 
+    /// Shut down the pool.
+    /// You MUST call this when you're done, otherwise we'll drop data.
+    // thank rust's lack of async drop
+    // this closes the pool-members serially for simplicity's sake
     #[throws]
     pub async fn shutdown(&mut self) {
         for Member { tx, handle, .. } in self.things.iter_mut() {
@@ -172,7 +214,7 @@ impl AsyncPool {
     }
 }
 
-impl Drop for AsyncPool {
+impl Drop for AsyncProducerPool {
     fn drop(&mut self) {
         if !self.shutdown.load(Ordering::SeqCst) {
             log::error!("async pool being dropped without being shut down! data will be lost");
@@ -204,7 +246,7 @@ mod tests {
 
     #[tokio::test]
     async fn it_works() {
-        let (mut pool, buf_refs) = AsyncPool::of_size_mocked("mf-test-2".to_string(), 2, 0)
+        let (mut pool, buf_refs) = AsyncProducerPool::of_size_mocked("mf-test-2".to_string(), 2, 0)
             .await
             .unwrap();
 
@@ -219,9 +261,10 @@ mod tests {
     #[should_panic]
     #[tokio::test]
     async fn it_panics_if_it_cant_flush() {
-        let (mut pool, _buf_refs) = AsyncPool::of_size_mocked("mf-test-2".to_string(), 2, 11)
-            .await
-            .unwrap();
+        let (mut pool, _buf_refs) =
+            AsyncProducerPool::of_size_mocked("mf-test-2".to_string(), 2, 11)
+                .await
+                .unwrap();
 
         pool.produce("hello".to_string()).await.unwrap();
         pool.produce("world".to_string()).await.unwrap();

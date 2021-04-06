@@ -28,7 +28,7 @@ impl Buffer {
         self.running_bytes + bs >= Self::MAX_BYTES || self.buf.len() + 1 >= Self::MAX_RECORDS
     }
 
-    // member fn, not associated, because it breaks rust-analizer???
+    // member fn, not associated, because it breaks rust-analyzer???
     #[throws]
     pub(crate) fn check_record_too_large(&self, rec: &str) {
         let bs = rec.as_bytes().len();
@@ -43,6 +43,7 @@ impl Buffer {
 
     // ASSUMES: this won't make us overfull -- ie the caller checked that first
     pub(crate) fn add_rec(&mut self, rec: String) {
+        // TODO: can we do this with less copying?
         let bytes = Bytes::copy_from_slice(rec.as_bytes());
         self.running_bytes += bytes.len();
         self.buf.push(Record { data: bytes });

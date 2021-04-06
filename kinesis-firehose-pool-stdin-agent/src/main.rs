@@ -5,7 +5,7 @@ use env_logger::Env;
 use fehler::throws;
 use structopt::StructOpt;
 
-use kinesis_firehose_producer::async_producer_pool::AsyncPool;
+use kinesis_firehose_producer::async_producer_pool::AsyncProducerPool;
 
 #[derive(Debug, StructOpt)]
 #[structopt(
@@ -25,7 +25,7 @@ async fn main() {
     let level_str = "info,kinesis_firehose_produce=trace";
     env_logger::Builder::from_env(Env::default().default_filter_or(level_str)).init();
     let opt = Opt::from_args();
-    let mut pool = AsyncPool::of_size(opt.firehose_name, opt.num_producers).await?;
+    let mut pool = AsyncProducerPool::of_size(opt.firehose_name, opt.num_producers).await?;
     for line in std::io::stdin().lock().lines() {
         let line = line?;
         pool.produce(line).await?;

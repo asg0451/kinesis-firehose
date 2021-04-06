@@ -1,68 +1,34 @@
+//! Sync Producer
+//!
+//! This is just a wrapper around [`async_producer::Producer`] that creates a new Tokio [`Runtime`]
+//! and wraps method calls in [`Runtime::block_on`].
+//!
+//! You probably want to use [`KinesisFirehoseProducer`], which is a type alias of [`Producer<KinesisFirehoseClient>`]
+
 use fehler::throws;
 
 use rusoto_firehose::KinesisFirehoseClient;
-use tokio::runtime;
+use tokio::runtime::{Builder, Runtime};
 
 use crate::async_producer;
 use crate::error::Error;
 use crate::put_record_batcher::PutRecordBatcher;
 
-// a synchronous buffering producer. TODO: async version?
-// TODO: tests
-
-// TODO: rewrite
-// async, streams
-// https://github.com/mre/futures-batch for turning a stream of incoming
-//   strs into batched / times flushes
-// re shutdown:
-//// make users call it or shrug?
-///// pub async fn close(self) -> Result<()>
-//// channel nonsense
-///// tokio-postgres eg https://www.reddit.com/r/rust/comments/m1t59y/what_is_the_proper_protocol_for_dropping/gqgac1y/
-/////// there is a drop handler task waiting on a oneshot (tokio) channel
-/////// drop: create a std oneshot channel, send its tx through the ^ other channel, blocking-recv on new channel
-/////// handler: recvs, flushes, passes result back through the tx it just recvd
-/////// drop: recvs, done
-/////// also has to somehow make sure that no tasks are running or the stream is closed or something idk
-/////// finnicky. error handling? timeout?
-/////// can it even happen that we have a drop handler alive when drop is called? cause that handler will have a reference to the obj
-/////// uhhhhhhhhh
-//// context std BufWriter tries to flush on shutdown, swallows errors, warns in doc
-
-// https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=d978da269ec2f069a24b81885b72ad19
-
-// "don't block in drop" if code is to be called from async.
-
-// where does this leave us?
-
+/// The producer itself.
+/// Create one with [`Producer<KinesisFirehoseClient>::new`] or [`Producer::with_client`]
+///
+/// Unlike the Async Producer, this one WILL flush on [`Drop`], so you don't need to flush it manually
+/// Maybe you still should, though, in case it fails.
 pub struct Producer<C: PutRecordBatcher> {
     async_producer: async_producer::Producer<C>,
-    runtime: runtime::Runtime,
+    runtime: Runtime,
 }
 
+/// The type alias you'll probably want to use
 pub type KinesisFirehoseProducer = Producer<KinesisFirehoseClient>;
 
-impl<C: PutRecordBatcher> Producer<C> {
-    #[throws]
-    pub fn with_client(client: C, stream_name: String) -> Self {
-        Self {
-            async_producer: async_producer::Producer::with_client(client, stream_name)?,
-            runtime: make_runtime()?,
-        }
-    }
-
-    #[throws]
-    pub fn produce(&mut self, rec: String) {
-        self.runtime.block_on(self.async_producer.produce(rec))?;
-    }
-
-    #[throws]
-    pub fn flush(&mut self) {
-        self.runtime.block_on(self.async_producer.flush())?;
-    }
-}
-
 impl Producer<KinesisFirehoseClient> {
+    /// Create a Producer with a new [`KinesisFirehoseClient`] gleaned from the environment
     #[throws]
     pub fn new(stream_name: String) -> Self {
         Self {
@@ -72,7 +38,33 @@ impl Producer<KinesisFirehoseClient> {
     }
 }
 
-// this one does flush on drop, unlike the async one
+impl<C: PutRecordBatcher> Producer<C> {
+    /// Buffer a record to be sent to Kinesis Firehose. If this record fills up the buffer, it will
+    /// be flushed.
+    ///
+    /// This function WILL add newlines to the end of each record. Don't add them yourself.
+    #[throws]
+    pub fn produce(&mut self, rec: String) {
+        self.runtime.block_on(self.async_producer.produce(rec))?;
+    }
+
+    /// Make the producer flush its buffer.
+    #[throws]
+    pub fn flush(&mut self) {
+        self.runtime.block_on(self.async_producer.flush())?;
+    }
+
+    /// Create a Producer with an existing [`KinesisFirehoseClient`]
+    #[throws]
+    pub fn with_client(client: C, stream_name: String) -> Self {
+        Self {
+            async_producer: async_producer::Producer::with_client(client, stream_name)?,
+            runtime: make_runtime()?,
+        }
+    }
+}
+
+/// Flush on Drop
 impl<C: PutRecordBatcher> Drop for Producer<C> {
     fn drop(&mut self) {
         let res = self.flush();
@@ -83,10 +75,8 @@ impl<C: PutRecordBatcher> Drop for Producer<C> {
 }
 
 #[throws]
-fn make_runtime() -> runtime::Runtime {
-    runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?
+fn make_runtime() -> Runtime {
+    Builder::new_current_thread().enable_all().build()?
 }
 
 #[cfg(test)]
