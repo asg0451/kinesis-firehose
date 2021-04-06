@@ -12,6 +12,8 @@
 //!   - Attempts to buffer the maximum amount (500 records)
 //!   - Will always retry requests 10 times, waiting a constant time between attempts
 //!   - Probably others
+//!
+//! See examples for usage.
 
 mod buffer;
 pub mod error;
