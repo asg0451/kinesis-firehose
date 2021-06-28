@@ -19,8 +19,9 @@ fehler = "1.0.0"
 futures = "0.3.13"
 log = "0.4.14"
 rand = "0.8.3"
-rusoto_core = "0.46.0"
-rusoto_firehose = "0.46.0"
+
+rusoto_core = { version = "0.46.0", default_features = false, features = ["rustls"] }
+rusoto_firehose = { version = "0.46.0", default_features = false, features = ["rustls"] }
 thiserror = "1.0.24"
 # TODO: find what features i really need
 tokio = { version = "1.4.0", features = ["full"]}
