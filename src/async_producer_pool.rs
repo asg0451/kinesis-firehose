@@ -149,7 +149,7 @@ impl AsyncProducerPool {
         }
         (&mut self.err_watcher).await?;
         self.shutdown.store(true, Ordering::SeqCst);
-        log::trace!("shutdown");
+        log::debug!("shutdown");
     }
 
     #[throws]

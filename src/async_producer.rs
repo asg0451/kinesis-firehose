@@ -3,6 +3,7 @@
 //! You probably want to use [`KinesisFirehoseProducer`], which is a type alias of [`Producer<KinesisFirehoseClient>`]
 
 use fehler::{throw, throws};
+use rand::Rng;
 use rusoto_core::{Region, RusotoError};
 use rusoto_firehose::{KinesisFirehoseClient, PutRecordBatchError, PutRecordBatchInput};
 
@@ -84,7 +85,8 @@ impl<C: PutRecordBatcher> Producer<C> {
                 // back off and retry the whole request
                 // TODO: is this a param? more intricate logic based on attempt num?
                 log::debug!("service unavailable: {}. sleeping & retrying", err);
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                let jitter = rand::thread_rng().gen_range(0..100);
+                tokio::time::sleep(tokio::time::Duration::from_millis(100 + jitter)).await;
                 continue;
             }
 
