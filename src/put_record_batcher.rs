@@ -27,6 +27,7 @@ pub trait PutRecordBatcher: Send + Sync {
 pub(crate) struct MockPutRecordBatcher {
     pub(crate) buf: Arc<Mutex<RefCell<Vec<Record>>>>,
     pub(crate) fail_times: Arc<Mutex<RefCell<i64>>>,
+    pub(crate) svc_fail_times: Arc<Mutex<RefCell<i64>>>,
 }
 
 #[cfg(test)]
@@ -35,6 +36,7 @@ impl MockPutRecordBatcher {
         Self {
             buf: Arc::new(Mutex::new(RefCell::new(vec![]))),
             fail_times: Arc::new(Mutex::new(RefCell::new(0))),
+            svc_fail_times: Arc::new(Mutex::new(RefCell::new(0))),
         }
     }
 
@@ -42,6 +44,15 @@ impl MockPutRecordBatcher {
         Self {
             buf: Arc::new(Mutex::new(RefCell::new(vec![]))),
             fail_times: Arc::new(Mutex::new(RefCell::new(ft))),
+            svc_fail_times: Arc::new(Mutex::new(RefCell::new(0))),
+        }
+    }
+
+    pub(crate) fn with_svc_and_fail_times(sft: i64, ft: i64) -> Self {
+        Self {
+            buf: Arc::new(Mutex::new(RefCell::new(vec![]))),
+            fail_times: Arc::new(Mutex::new(RefCell::new(ft))),
+            svc_fail_times: Arc::new(Mutex::new(RefCell::new(sft))),
         }
     }
 
@@ -64,6 +75,16 @@ impl PutRecordBatcher for MockPutRecordBatcher {
 
         let buf = self.buf.lock().expect("poisoned mutex");
         let mut buf = buf.borrow_mut();
+
+        let svc_fail_times = self.svc_fail_times.lock().expect("poisoned mutex");
+        let mut svc_fail_times = svc_fail_times.borrow_mut();
+
+        if *svc_fail_times > 0 {
+            *svc_fail_times -= 1;
+            return Err(RusotoError::Service(
+                PutRecordBatchError::ServiceUnavailable("svc exc".to_string()),
+            ));
+        }
 
         let fail_times = self.fail_times.lock().expect("poisoned mutex");
         let mut fail_times = fail_times.borrow_mut();

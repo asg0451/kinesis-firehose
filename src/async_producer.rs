@@ -66,7 +66,9 @@ impl<C: PutRecordBatcher> Producer<C> {
         }
         let recs = self.buf.as_owned_vec();
         let mut records_to_try = recs;
-        let mut attempts_left: i32 = 10; // TODO: this should be a parameter. config? buf size too
+
+        let max_attempts = 10; // TODO: this should be a parameter. config? buf size too
+        let mut attempts_left: i32 = max_attempts;
 
         while attempts_left > 0 {
             log::trace!("flushing; attempts_left: {}", attempts_left);
@@ -83,10 +85,13 @@ impl<C: PutRecordBatcher> Producer<C> {
 
             if let Err(RusotoError::Service(PutRecordBatchError::ServiceUnavailable(err))) = res {
                 // back off and retry the whole request
-                // TODO: is this a param? more intricate logic based on attempt num?
-                log::debug!("service unavailable: {}. sleeping & retrying", err);
-                let jitter = rand::thread_rng().gen_range(0..100);
-                tokio::time::sleep(tokio::time::Duration::from_millis(100 + jitter)).await;
+                let dur = Self::sleep_duration(max_attempts - attempts_left);
+                log::debug!(
+                    "service unavailable: {}. sleeping for {} millis & retrying",
+                    err,
+                    dur.as_millis()
+                );
+                tokio::time::sleep(dur).await;
                 continue;
             }
 
@@ -121,6 +126,17 @@ impl<C: PutRecordBatcher> Producer<C> {
             client,
             stream_name,
         }
+    }
+
+    fn sleep_duration(attempt: i32) -> tokio::time::Duration {
+        let mut rng = rand::thread_rng();
+        let rand_factor = 0.5;
+        let absolute_max = 10_000; // 10 sec
+
+        let ivl = (1. + (attempt as f64).powf(1.15)) * 100.;
+        let rand_ivl = ivl * (rng.gen_range((1. - rand_factor)..(1. + rand_factor)));
+        let millis = (rand_ivl.ceil() as u64).min(absolute_max);
+        tokio::time::Duration::from_millis(millis)
     }
 }
 
@@ -193,5 +209,19 @@ mod tests {
             // through, and then we resent the first
             vec!["message 2\n".to_string(), "message 1\n".to_string()]
         );
+    }
+
+    #[tokio::test]
+    async fn it_uses_exponential_backoff() {
+        let mocker = MockPutRecordBatcher::with_svc_and_fail_times(5, 0);
+
+        let mut producer = Producer::with_client(mocker, "mf-test-2".to_string()).unwrap();
+        producer.produce("message 1".to_string()).await.unwrap();
+
+        let start = tokio::time::Instant::now();
+        producer.flush().await.expect("should eventually succeed");
+        let end = tokio::time::Instant::now();
+
+        assert!(end - start > tokio::time::Duration::from_millis(200));
     }
 }
