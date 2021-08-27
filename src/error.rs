@@ -33,5 +33,11 @@ pub enum Error {
     #[allow(clippy::upper_case_acronyms)]
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
+
+    #[error("pool was poisoned by: {source_str}")]
+    Poisoned {
+        // idk how to make this take an error
+        source_str: String,
+    },
 }
 // type Result<T> = std::result::Result<T, Error>;
