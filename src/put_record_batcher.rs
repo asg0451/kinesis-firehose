@@ -28,6 +28,7 @@ pub(crate) struct MockPutRecordBatcher {
     pub(crate) buf: Arc<Mutex<RefCell<Vec<Record>>>>,
     pub(crate) fail_times: Arc<Mutex<RefCell<i64>>>,
     pub(crate) svc_fail_times: Arc<Mutex<RefCell<i64>>>,
+    pub(crate) partial_failures_throttled: bool,
 }
 
 #[cfg(test)]
@@ -37,6 +38,7 @@ impl MockPutRecordBatcher {
             buf: Arc::new(Mutex::new(RefCell::new(vec![]))),
             fail_times: Arc::new(Mutex::new(RefCell::new(0))),
             svc_fail_times: Arc::new(Mutex::new(RefCell::new(0))),
+            partial_failures_throttled: false,
         }
     }
 
@@ -45,6 +47,7 @@ impl MockPutRecordBatcher {
             buf: Arc::new(Mutex::new(RefCell::new(vec![]))),
             fail_times: Arc::new(Mutex::new(RefCell::new(ft))),
             svc_fail_times: Arc::new(Mutex::new(RefCell::new(0))),
+            partial_failures_throttled: false,
         }
     }
 
@@ -53,6 +56,20 @@ impl MockPutRecordBatcher {
             buf: Arc::new(Mutex::new(RefCell::new(vec![]))),
             fail_times: Arc::new(Mutex::new(RefCell::new(ft))),
             svc_fail_times: Arc::new(Mutex::new(RefCell::new(sft))),
+            partial_failures_throttled: false,
+        }
+    }
+
+    pub(crate) fn with_all(
+        fail_times: i64,
+        svc_fail_times: i64,
+        partial_failures_throttled: bool,
+    ) -> Self {
+        Self {
+            buf: Arc::new(Mutex::new(RefCell::new(vec![]))),
+            fail_times: Arc::new(Mutex::new(RefCell::new(fail_times))),
+            svc_fail_times: Arc::new(Mutex::new(RefCell::new(svc_fail_times))),
+            partial_failures_throttled,
         }
     }
 
@@ -97,8 +114,13 @@ impl PutRecordBatcher for MockPutRecordBatcher {
                 // TODO: realistic values
                 if *fail_times > 0 {
                     *fail_times -= 1;
+                    let error_code = if self.partial_failures_throttled {
+                        "ServiceUnavailableException"
+                    } else {
+                        "some other error code"
+                    };
                     PutRecordBatchResponseEntry {
-                        error_code: Some("some error code".to_string()),
+                        error_code: Some(error_code.to_string()),
                         error_message: Some("some error message".to_string()),
                         record_id: Some("wa".to_string()),
                     }

@@ -5,7 +5,9 @@
 use fehler::{throw, throws};
 use rand::Rng;
 use rusoto_core::{Region, RusotoError};
-use rusoto_firehose::{KinesisFirehoseClient, PutRecordBatchError, PutRecordBatchInput};
+use rusoto_firehose::{
+    KinesisFirehoseClient, PutRecordBatchError, PutRecordBatchInput, PutRecordBatchResponseEntry,
+};
 
 use crate::buffer::Buffer;
 use crate::error::Error;
@@ -98,8 +100,34 @@ impl<C: PutRecordBatcher> Producer<C> {
             let res = res?;
 
             if res.failed_put_count > 0 {
-                records_to_try = res
-                    .request_responses
+                log::debug!(
+                    "{} partial errors. first: {:?}",
+                    res.failed_put_count,
+                    res.request_responses
+                        .iter()
+                        .filter(|rr| rr.error_code.is_some())
+                        .next()
+                );
+
+                let rrs = res.request_responses;
+                // there could be a partial error that is a throttling error
+                let first_throttling_error = rrs
+                    .iter()
+                    .filter(|rr| Self::response_entry_is_throttling_error(rr))
+                    .next();
+
+                if let Some(first_throttling_error) = first_throttling_error {
+                    let dur = Self::sleep_duration(max_attempts - attempts_left);
+                    log::debug!(
+                        "service unavailable: {:?}. sleeping for {} millis & retrying",
+                        first_throttling_error,
+                        dur.as_millis()
+                    );
+                    tokio::time::sleep(dur).await;
+                    continue;
+                }
+
+                records_to_try = rrs
                     .into_iter()
                     .enumerate()
                     .filter_map(|(i, rr)| {
@@ -137,6 +165,13 @@ impl<C: PutRecordBatcher> Producer<C> {
         let rand_ivl = ivl * (rng.gen_range((1. - rand_factor)..(1. + rand_factor)));
         let millis = (rand_ivl.ceil() as u64).min(absolute_max);
         tokio::time::Duration::from_millis(millis)
+    }
+
+    fn response_entry_is_throttling_error(e: &PutRecordBatchResponseEntry) -> bool {
+        matches!(
+            e.error_code.as_ref().map(AsRef::as_ref),
+            Some("ServiceUnavailableException")
+        )
     }
 }
 
@@ -212,11 +247,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn it_uses_exponential_backoff() {
+    async fn it_uses_exponential_backoff_for_req_errors() {
+        let _ = env_logger::builder().is_test(true).try_init();
         let mocker = MockPutRecordBatcher::with_svc_and_fail_times(5, 0);
 
         let mut producer = Producer::with_client(mocker, "mf-test-2".to_string()).unwrap();
         producer.produce("message 1".to_string()).await.unwrap();
+
+        let start = tokio::time::Instant::now();
+        producer.flush().await.expect("should eventually succeed");
+        let end = tokio::time::Instant::now();
+
+        assert!(end - start > tokio::time::Duration::from_millis(200));
+    }
+
+    #[tokio::test]
+    async fn it_uses_exponential_backoff_for_partial_errors() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let mocker = MockPutRecordBatcher::with_all(5, 0, true);
+
+        let mut producer = Producer::with_client(mocker, "mf-test-2".to_string()).unwrap();
+        producer.produce("message 1".to_string()).await.unwrap();
+        producer.produce("message 2".to_string()).await.unwrap();
 
         let start = tokio::time::Instant::now();
         producer.flush().await.expect("should eventually succeed");
