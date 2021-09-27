@@ -105,16 +105,14 @@ impl<C: PutRecordBatcher> Producer<C> {
                     res.failed_put_count,
                     res.request_responses
                         .iter()
-                        .filter(|rr| rr.error_code.is_some())
-                        .next()
+                        .find(|rr| rr.error_code.is_some())
                 );
 
                 let rrs = res.request_responses;
                 // there could be a partial error that is a throttling error
                 let first_throttling_error = rrs
                     .iter()
-                    .filter(|rr| Self::response_entry_is_throttling_error(rr))
-                    .next();
+                    .find(|rr| Self::response_entry_is_throttling_error(rr));
 
                 if let Some(first_throttling_error) = first_throttling_error {
                     let dur = Self::sleep_duration(max_attempts - attempts_left);
