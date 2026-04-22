@@ -18,7 +18,7 @@ bytes = "1.0.1"
 fehler = "1.0.0"
 futures = "0.3.13"
 log = "0.4.14"
-rand = "0.8.3"
+rand = "0.8.6"
 
 rusoto_core = { version = "0.46.0", default_features = false, features = ["rustls"] }
 rusoto_firehose = { version = "0.46.0", default_features = false, features = ["rustls"] }
